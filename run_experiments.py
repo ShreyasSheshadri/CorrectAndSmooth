@@ -24,22 +24,25 @@ def main():
     parser = argparse.ArgumentParser(description='Outcome Correlations)')
     parser.add_argument('--dataset', type=str)
     parser.add_argument('--method', type=str)
+    parser.add_argument('--residue', type=str, required=False, default=None)
     args = parser.parse_args()
-
+    
     try:
         dataset = PygNodePropPredDataset(name=f'ogbn-{args.dataset}')
     except ValueError:
         dataset = dgl_to_ogbn(
-            args.dataset, 'ogbn-cora-submission')
+            args.dataset, 'ogbn-{}-submission'.format(args.dataset))
     data = dataset[0]
-
-    adj, D_isqrt = process_adj(data, args.dataset not in ['arxiv', 'products'])
+    adj, D_isqrt = process_adj(data)
     normalized_adjs = gen_normalized_adjs(adj, D_isqrt)
     DAD, DA, AD = normalized_adjs
 
     evaluator = Evaluator(name=f'ogbn-{args.dataset}')
 
     split_idx = dataset.get_idx_split()
+    for k in split_idx:
+        if isinstance(split_idx[k], (np.ndarray, np.generic) ):
+            split_idx[k] = torch.from_numpy(split_idx[k])
 
     def eval_test(result, idx=split_idx['test']):
         return evaluator.eval({'y_true': data.y[idx], 'y_pred': result[idx].argmax(dim=-1, keepdim=True), })['acc']
@@ -150,7 +153,7 @@ def main():
             'num_propagations2': 50,
         }
         mlp_fn = double_correlation_fixed
-    elif args.dataset == 'cora':
+    elif args.dataset == 'cora' or args.dataset == 'citeseer' or args.dataset == 'pubmed':
         # TODO tune hyper-parameters on ogbn-cora (presently, a copy of ogbn-arxiv)
         lp_dict = {
             'idxs': ['train'],
@@ -215,10 +218,15 @@ def main():
         }
         gat_fn = only_outcome_correlation
 
+    
     model_outs = glob.glob(f'models/{args.dataset}_{args.method}/*.pt')
+    residue_outs = [None for i in range(len(model_outs))]
+    if args.residue:
+        residue_outs = ['generalization_bounds/{}-{}/{}-{}.th'.format(args.dataset, args.method, args.residue, x.split('/')[-1].split('.')[0])  for x in model_outs] 
+    model_outs = [x for x in zip(model_outs, residue_outs)]
 
     if args.method == 'lp':
-        out = label_propagation(data, split_idx, **lp_dict)
+        out = label_propagation(data, split_idx, None, **lp_dict)
         print('Valid acc: ', eval_test(out, split_idx['valid']))
         print('Test acc:', eval_test(out, split_idx['test']))
         return
@@ -226,15 +234,19 @@ def main():
     get_orig_acc(data, eval_test, model_outs, split_idx)
     while True:
         if args.method == 'plain':
+            plain_dict['device'] = 'cpu'
             evaluate_params(data, eval_test, model_outs,
                             split_idx, plain_dict, fn=plain_fn)
         elif args.method == 'linear':
+            linear_dict['device'] = 'cpu'
             evaluate_params(data, eval_test, model_outs,
                             split_idx, linear_dict, fn=linear_fn)
         elif args.method == 'mlp':
+            mlp_dict['device'] = 'cpu'
             evaluate_params(data, eval_test, model_outs,
                             split_idx, mlp_dict, fn=mlp_fn)
         elif args.method == 'gat':
+            gat_dict['device'] = 'cpu'
             evaluate_params(data, eval_test, model_outs,
                             split_idx, gat_dict, fn=gat_fn)
 #         import pdb; pdb.set_trace()

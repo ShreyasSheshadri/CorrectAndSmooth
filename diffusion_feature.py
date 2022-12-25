@@ -82,8 +82,9 @@ def community(data, post_fix):
 
 def spectral(data, post_fix):
     from julia.api import Julia
-    jl = Julia(compiled_modules=False)
+    jl = Julia(runtime='/home/shreyshs/Graph/julia-1.8.3/bin/julia', compiled_modules=False)
     from julia import Main
+    Main.using('HDF5')
     Main.include("./norm_spec.jl")
     print('Setting up spectral embedding')
     data.edge_index = to_undirected(data.edge_index)

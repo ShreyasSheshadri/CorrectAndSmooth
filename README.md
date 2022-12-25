@@ -20,13 +20,27 @@ pip install ogb
 pip install scipy
 pip install networkx
 ```
-**NOTE**: We have not set up Julia yet, which will cause failures when the spectral embedding is required (e.g., in `python gen_models.py --dataset arxiv --model mlp --use_embeddings`).
+**NOTE**: We have not set up Julia yet, which will cause failures when the spectral embedding is required (e.g., in `python gen_models.py --dataset arxiv --model mlp --use_embeddings`). To obtain spectral embeddings, you need to install Julia, followed by pyJulia. Please refer https://pyjulia.readthedocs.io/en/latest/installation.html for more details. Once done with the installation, try to run the gen_models.py to obtain spectral embeddings. You may encounter errors here, one has to debug them. I faced two errors and their fixes are found in diffusion_feature.py (lines 85-87) . The issues and fixes are a) Unable to find Julia - so I have to specify the path while running pyJulia library. b) Some packages were missing in Julia, so I had to install them programmatically c) Add the file 'norm_spec.jl' inside the lib folder of Julia installation. These fixes may not be required in your case, please comment them out before running gen_models.py. 
 
-This one is admittedly dirty, but for `ogb.nodeproppred.Evaluator` to recognise Cora, one has to modify `master.csv` found inside `site-packages/ogb/nodeproppred/` (mine is at `/Users/samdatta/miniconda/envs/gmlpipe/lib/python3.9/site-packages/ogb/nodeproppred/` - your's may be different). I did it with:
+**NOTE**: You need to install hnsw library. For installation details refer - https://github.com/nmslib/hnswlib
+
+**NOTE**: Citeseer, Cora, Pubmed are not OGB datasets. You need to create a folder 'ogbn-cora-submission' with an empty 'README.md' file inside the folder for 'cora' dataset. Begin by running 
+
+`python run_experiments.py --dataset cora --method lp`
+
+This should package Cora as a OGB dataset and create a folder 'submission_ogbn_cora'. Copy the folder 'submission_ogbn_cora/cora' into 'dataset' folder and rename it as 'ogbn_cora'. This one is admittedly dirty, but for `ogb.nodeproppred.Evaluator` to recognise Cora, one has to modify `master.csv` found inside `site-packages/ogb/nodeproppred/` (mine is at `/Users/samdatta/miniconda/envs/gmlpipe/lib/python3.9/site-packages/ogb/nodeproppred/` - your's may be different). I did it with:
 
 ```sh
 cp ogbn-cora-submission/master.csv /Users/samdatta/miniconda/envs/gmlpipe/lib/python3.9/site-packages/ogb/nodeproppred/
 ```
+In master.csv, one has to enter the dataset details. I have enclosed a file called 'my_master.csv' in the repo as reference. You can just copy it. Make sure to enter the 'binary' field in master.csv as 'True', otherwise the dataset is repeatedly downloaded each time you run either gen_models.py or run_experiments.py.
+
+## How to run Generalization bound variants
+
+- Run 'gen_models.py' and 'run_experiments.py' files, with instructions provided in subsequent sections to complete running vanilla C&S experiments.
+- Now create a folder 'generalization_bounds' and run the notebook GenerateBounds.ipynb to obtain generalization bounds.
+- Run ComputeReadResults.ipynb (only first 3 cells of the notebook, exclude the cells under Results) to obtain 3 scripts to run citeseer, cora, pubmed, arxiv, products. Create a folder 'model_results' and execute each of these scripts.
+- Finally, run ComputeReadResults.ipynb (rest of the cells under Results) to get the results.
 
 ## Some Tips 
 - In general, the more complex and "smooth" your GNN is, the less likely it'll be that applying the "Correct" portion helps performance. In those cases, you may consider just applying the "smooth" portion, like we do on the GAT. In almost all cases, applying the "smoothing" component will improve performance. For Linear/MLP models, applying the "Correct" portion is almost always essential for obtaining good performance.

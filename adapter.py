@@ -10,6 +10,12 @@ def dgl_to_ogbn(dataset_name, mapping_path, is_sparse=False):
     if 'cora' == dataset_name:
         dataset = CoraGraphDataset()
         dataset_name = 'ogbn-cora'
+    if 'citeseer' == dataset_name:
+        dataset = CiteseerGraphDataset()
+        dataset_name = 'ogbn-citeseer'
+    if 'pubmed' == dataset_name:
+        dataset = PubmedGraphDataset()
+        dataset_name = 'ogbn-pubmed'
 
     saver = DatasetSaver(dataset_name=dataset_name, is_hetero=False, version=1)
 
@@ -36,7 +42,7 @@ def dgl_to_ogbn(dataset_name, mapping_path, is_sparse=False):
     saver.save_task_info(task_type='classification',
                          eval_metric='acc', num_classes=dataset.num_classes)
     meta_dict = saver.get_meta_dict()
-
+    print(meta_dict)
     if is_sparse:
         pyg_dataset = PygNodePropPredDataset(
             dataset_name, meta_dict=meta_dict, transform=T.ToSparseTensor())

@@ -134,9 +134,8 @@ def main():
             name=f'ogbn-{args.dataset}', transform=T.ToSparseTensor())
     except ValueError:
         dataset = dgl_to_ogbn(
-            args.dataset, 'ogbn-cora-submission', is_sparse=True)
-    data = dataset[0]
-
+            args.dataset, 'ogbn-{}-submission'.format(args.dataset), is_sparse=True)
+    
     data = dataset[0]
     data.adj_t = data.adj_t.to_symmetric()
 
@@ -148,7 +147,7 @@ def main():
             name=f'ogbn-{args.dataset}')[0]
     except ValueError:
         preprocess_data = dgl_to_ogbn(
-            args.dataset, 'ogbn-cora-submission')[0]
+            args.dataset, 'ogbn-{}-submission'.format(args.dataset))[0]
 
     if args.dataset == 'arxiv':
         embeddings = torch.cat([preprocess(preprocess_data, 'diffusion', post_fix=args.dataset),
@@ -156,7 +155,7 @@ def main():
     elif args.dataset == 'products':
         embeddings = preprocess(
             preprocess_data, 'spectral', post_fix=args.dataset)
-    elif args.dataset == 'cora':
+    elif args.dataset == 'cora' or args.dataset == 'citeseer' or args.dataset == 'pubmed':
         embeddings = preprocess(
             preprocess_data, 'diffusion', post_fix=args.dataset, is_ogb_submission=True)
 
@@ -206,6 +205,9 @@ def main():
             if valid_acc > best_valid:
                 best_valid = valid_acc
                 best_out = out.cpu().exp()
+                torch.save({
+            'epoch': epoch,
+            'model_state_dict': model.state_dict()}, '{}/model-{}.tar'.format(model_dir, run))
 
             print(f'Run: {run + 1:02d}, '
                   f'Epoch: {epoch:02d}, '

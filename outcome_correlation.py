@@ -73,12 +73,9 @@ class SimpleLogger(object):
             print()
 
 
-def process_adj(data, is_ogb_submission=False):
+def process_adj(data):
     N = data.num_nodes
-
-    # FIXME figure out what's going on with "cora"
-    if not is_ogb_submission:
-        data.edge_index = to_undirected(data.edge_index, data.num_nodes)
+    data.edge_index = to_undirected(data.edge_index, num_nodes=data.num_nodes)
 
     row, col = data.edge_index
 
@@ -189,7 +186,7 @@ def general_outcome_correlation(adj, y, alpha, num_propagations, post_step, alph
     return result.to(orig_device)
 
 
-def label_propagation(data, split_idx, A, alpha, num_propagations, idxs):
+def label_propagation(data, split_idx, residue, A, alpha, num_propagations, idxs):
     labels = data.y.data
     c = labels.max() + 1
     n = labels.shape[0]
@@ -200,7 +197,7 @@ def label_propagation(data, split_idx, A, alpha, num_propagations, idxs):
     return general_outcome_correlation(A, y, alpha, num_propagations, post_step=lambda x: torch.clamp(x, 0, 1), alpha_term=True)
 
 
-def double_correlation_autoscale(data, model_out, split_idx, A1, alpha1, num_propagations1, A2, alpha2, num_propagations2, scale=1.0, train_only=False, device='cuda', display=True):
+def double_correlation_autoscale(data, model_out, split_idx, residue, A1, alpha1, num_propagations1, A2, alpha2, num_propagations2, scale=1.0, train_only=False, device='cuda', display=True):
     train_idx, valid_idx, test_idx = split_idx
     if train_only:
         label_idx = torch.cat([split_idx['train']])
@@ -211,9 +208,13 @@ def double_correlation_autoscale(data, model_out, split_idx, A1, alpha1, num_pro
 
     y = pre_residual_correlation(
         labels=data.y.data, model_out=model_out, label_idx=residual_idx)
+    #tyh = y[torch.cat([split_idx['test'], split_idx['valid']])]
+    #print(torch.sum(y[residual_idx]), torch.sum(y), torch.sum(tyh), torch.sum(tyh > 0))
+    if residue:
+        y = y + torch.load(residue, map_location='cpu')
     resid = general_outcome_correlation(adj=A1, y=y, alpha=alpha1, num_propagations=num_propagations1,
                                         post_step=lambda x: torch.clamp(x, -1.0, 1.0), alpha_term=True, display=display, device=device)
-
+    
     orig_diff = y[residual_idx].abs().sum()/residual_idx.shape[0]
     resid_scale = (orig_diff/resid.abs().sum(dim=1, keepdim=True))
     resid_scale[resid_scale.isinf()] = 1.0
@@ -229,7 +230,7 @@ def double_correlation_autoscale(data, model_out, split_idx, A1, alpha1, num_pro
     return res_result, result
 
 
-def double_correlation_fixed(data, model_out, split_idx, A1, alpha1, num_propagations1, A2, alpha2, num_propagations2, scale=1.0, train_only=False, device='cuda', display=True):
+def double_correlation_fixed(data, model_out, split_idx, residue, A1, alpha1, num_propagations1, A2, alpha2, num_propagations2, scale=1.0, train_only=False, device='cuda', display=True):
     train_idx, valid_idx, test_idx = split_idx
     if train_only:
         label_idx = torch.cat([split_idx['train']])
@@ -241,13 +242,15 @@ def double_correlation_fixed(data, model_out, split_idx, A1, alpha1, num_propaga
 
     y = pre_residual_correlation(
         labels=data.y.data, model_out=model_out, label_idx=residual_idx)
-
+    #tyh = y[torch.cat([split_idx['test'], split_idx['valid']])]
+    #print(torch.sum(y[residual_idx]), torch.sum(y), torch.sum(tyh), torch.sum(tyh > 0))
     fix_y = y[residual_idx].to(device)
-
+    if residue:
+        y = y + torch.load(residue, map_location='cpu')
     def fix_inputs(x):
         x[residual_idx] = fix_y
         return x
-
+    
     resid = general_outcome_correlation(adj=A1, y=y, alpha=alpha1, num_propagations=num_propagations1,
                                         post_step=lambda x: fix_inputs(x), alpha_term=True, display=display, device=device)
     res_result = model_out + scale*resid
@@ -261,7 +264,7 @@ def double_correlation_fixed(data, model_out, split_idx, A1, alpha1, num_propaga
     return res_result, result
 
 
-def only_outcome_correlation(data, model_out, split_idx, A, alpha, num_propagations, labels, device='cuda', display=True):
+def only_outcome_correlation(data, model_out, split_idx, residue, A, alpha, num_propagations, labels, device='cuda', display=True):
     res_result = model_out.clone()
     label_idxs = get_labels_from_name(labels, split_idx)
     y = pre_outcome_correlation(
@@ -274,12 +277,12 @@ def only_outcome_correlation(data, model_out, split_idx, A, alpha, num_propagati
 def evaluate_params(data, eval_test, model_outs, split_idx, params, fn=double_correlation_autoscale):
     logger = SimpleLogger('evaluate params', [], 2)
 
-    for out in model_outs:
+    for (out, residue) in model_outs:
         model_out, run = model_load(out)
         if isinstance(model_out, tuple):
             model_out, t = model_out
             split_idx = t
-        res_result, result = fn(data, model_out, split_idx, **params)
+        res_result, result = fn(data, model_out, split_idx, residue, **params)
         valid_acc, test_acc = eval_test(
             result, split_idx['valid']), eval_test(result, split_idx['test'])
         print(f"Valid: {valid_acc}, Test: {test_acc}")
@@ -295,7 +298,7 @@ def get_run_from_file(out):
 
 def get_orig_acc(data, eval_test, model_outs, split_idx):
     logger_orig = Logger(len(model_outs))
-    for out in model_outs:
+    for (out, residue) in model_outs:
         model_out, run = model_load(out)
         if isinstance(model_out, tuple):
             model_out, split_idx = model_out
